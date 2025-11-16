@@ -82,9 +82,8 @@ class LabelingConfig:
 
 
 class FloorPlanConfig:
-    def __init__(self, min_object_confidence: float = 0.5, simplify_footprint_threshold: int = 8,
+    def __init__(self, simplify_footprint_threshold: int = 8,
                  units: str = "meters", coordinate_system: str = "XZ (Y-up, floor at Y=0)"):
-        self.min_object_confidence = min_object_confidence
         self.simplify_footprint_threshold = simplify_footprint_threshold
         self.units = units
         self.coordinate_system = coordinate_system
