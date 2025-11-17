@@ -1,18 +1,24 @@
 import numpy as np
 from typing import List, Dict, Any
+import open3d as o3d
+import glob
+import cv2
+from ultralytics import YOLO
 
 from config import FloorPlanGeneratorConfig
 from point_cloud_processor import PointCloudProcessor
 from furniture_clusterer import FurnitureClusterer
 from label_projector import LabelProjector
-from src.segmentation import StructuralSegmenter
-from src.visualizer import FloorPlanVisualizer
+from segmentation import StructuralSegmenter
+from visualizer import FloorPlanVisualizer
+from yolo_wrapper import YOLODetector
+import traceback
 
 
 class FloorPlanGenerator:
-    def __init__(self, config: FloorPlanGeneratorConfig):
+    def __init__(self, config: FloorPlanGeneratorConfig, yolo_detector: YOLODetector = None):
         self.config = config
-        self.yolo_detector = None
+        self.yolo_detector = yolo_detector
         self.point_cloud_processor = PointCloudProcessor(config.point_cloud)
         self.segmenter = StructuralSegmenter(config.segmentation)
         self.furniture_clusterer = FurnitureClusterer(config.clustering)
@@ -26,7 +32,9 @@ class FloorPlanGenerator:
                      cameras: List[Dict[str, Any]],
                      output_path: str = "floor_plan.png"):
         # Get point cloud
-        point_cloud = ...
+        print("Loading point cloud...")
+        point_cloud = o3d.io.read_point_cloud(point_cloud_path)
+        print(f"Loaded point cloud from {point_cloud_path} with {len(point_cloud.points)} points.")
         processed_pcd = self.point_cloud_processor.preprocess(point_cloud)
 
         # Detect furniture in 2d
@@ -44,13 +52,8 @@ class FloorPlanGenerator:
         self.floor_plan_visualizer.generate_floor_plan(labeled_clusters, output_path)
 
 def run():
-    config = FloorPlanGeneratorConfig.default()
-
-    generator = FloorPlanGenerator(config)
-
-    # yolo stuff ...
-
     # example
+
     cameras = [
         {
             'intrinsics': np.array([[1000, 0, 320], [0, 1000, 240], [0, 0, 1]]),
@@ -60,18 +63,28 @@ def run():
             'image_height': 480
         }
     ]
+    config = FloorPlanGeneratorConfig.default(camera_intrinsics=cameras[0]['intrinsics'], image_size=(640, 480))
 
-    images = ...
+    # Initialize YOLO model
+    yolo_model = YOLO('models/yolo/yolo11n.pt')
+    yolo_detector = YOLODetector(yolo_model, config.detection)
+    
+    generator = FloorPlanGenerator(config, yolo_detector)
+
+    # Load images from /test/images/
+    image_files = glob.glob("test/images/*.jpg")
+    images = [cv2.imread(f) for f in image_files]
 
     try:
         results = generator.run_pipeline(
-            point_cloud_path="path/to/pointcloud.ply",
+            point_cloud_path="test/point_cloud.ply",
             images=images,
             cameras=cameras,
             output_path="floor_plan.png"
         )
         print("Pipeline completed successfully!")
     except Exception as e:
+        traceback.print_exc()
         print(f"Pipeline failed: {e}")
 
 if __name__ == "__main__":
