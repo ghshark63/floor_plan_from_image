@@ -2178,6 +2178,37 @@ files = [
 tests = ["pytest"]
 
 [[package]]
+name = "pycolmap"
+version = "3.13.0"
+description = "COLMAP bindings"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "pycolmap-3.13.0-cp310-cp310-macosx_14_0_arm64.whl", hash = "sha256:823e6463f490ba58570c4c63b4a242d0afca005f572927abc55bb65d58484f0a"},
+    {file = "pycolmap-3.13.0-cp310-cp310-manylinux_2_28_x86_64.whl", hash = "sha256:40c03735760a97f6e242cb7c6c748aed9314d0425afb8e590f684dbc47581888"},
+    {file = "pycolmap-3.13.0-cp310-cp310-win_amd64.whl", hash = "sha256:d42f7487cb462dc024bd1e78670880b953ffa4b1cd60fba250eea8101a13a7d7"},
+    {file = "pycolmap-3.13.0-cp311-cp311-macosx_14_0_arm64.whl", hash = "sha256:6f1c0e6c7594caaa5fd3f556a01a349ddeb41f1c5b06579eeb51acb14395f606"},
+    {file = "pycolmap-3.13.0-cp311-cp311-manylinux_2_28_x86_64.whl", hash = "sha256:88e7faecd46a4db7839ea1fe71bd481b477e153bf0cfd598ed541740c7be834d"},
+    {file = "pycolmap-3.13.0-cp311-cp311-win_amd64.whl", hash = "sha256:e80fefab544bb57039375abd3be16108a4a079d0345270872b2387ca3ac62325"},
+    {file = "pycolmap-3.13.0-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:6ea432f1f9b1dab0e805678d5280d55fbe034a12c3a5fa5bd3c85792d523b27a"},
+    {file = "pycolmap-3.13.0-cp312-cp312-manylinux_2_28_x86_64.whl", hash = "sha256:fd1b676c2f8ecf7f18e5a9240347ad4946ccd0c83bc92f5fdc39a498ae6c998b"},
+    {file = "pycolmap-3.13.0-cp312-cp312-win_amd64.whl", hash = "sha256:070e7554cfb9f0443876a055153547a4b54addbec77519f10269b4601dde63b1"},
+    {file = "pycolmap-3.13.0-cp313-cp313-macosx_14_0_arm64.whl", hash = "sha256:46d2108eaa1191584796a63f17a5f0204d59e30ec5f2778489ce44e19fff6ac2"},
+    {file = "pycolmap-3.13.0-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:dc749231ef310d867ad33db56feb9656c9223dd5db8bd816007b8cfdf7f1b0cc"},
+    {file = "pycolmap-3.13.0-cp313-cp313-win_amd64.whl", hash = "sha256:906511975ec614d9dd4f7566f38e17523106002f69b65adca3b13b1ed261088c"},
+    {file = "pycolmap-3.13.0-cp314-cp314-macosx_14_0_arm64.whl", hash = "sha256:d00ba606751167e03463135f2f61e4c7dfae3c3b08256b44cd5fcd0ba674e7f2"},
+    {file = "pycolmap-3.13.0-cp314-cp314-manylinux_2_28_x86_64.whl", hash = "sha256:202d73147c8e5c98255b212aec5059cbd325b7e7f0b2f73ec94d7d0da1c98e0a"},
+    {file = "pycolmap-3.13.0-cp314-cp314-win_amd64.whl", hash = "sha256:9617616fa8d6fed75990a226da18604f1313e30c768027de1bfa834532b7d261"},
+    {file = "pycolmap-3.13.0-cp39-cp39-macosx_14_0_arm64.whl", hash = "sha256:7004df0f89b88d0edbf3f922e22a2cf931786304e09c4237bab2a600d7d43d84"},
+    {file = "pycolmap-3.13.0-cp39-cp39-manylinux_2_28_x86_64.whl", hash = "sha256:dbbb25ba561430d6b7227e608e0dbb04cd9f40e54359816e7814254ff6104ca0"},
+    {file = "pycolmap-3.13.0-cp39-cp39-win_amd64.whl", hash = "sha256:1ea32e1a1bdb0a1525e4b444089cb7b8944eb0b1e0cb45a14ab57e2f56c72701"},
+]
+
+[package.dependencies]
+numpy = "*"
+
+[[package]]
 name = "pygments"
 version = "2.19.2"
 description = "Pygments is a syntax highlighting package written in Python."
@@ -3278,4 +3309,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11"
-content-hash = "4d802a91fdb7248ce71dc6653629c9efb9b4a4b1191e94146fd8ad100390312f"
+content-hash = "267ab2c6ef3f1c2d8da9aa7e41d32013a8efb367f0480e8445034e4165f8eda9"
