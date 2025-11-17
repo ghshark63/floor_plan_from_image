@@ -35,11 +35,20 @@ class FurnitureClusterer:
         Connect furniture points into individual objects using DBSCAN
         """
         points = np.asarray(furniture_points.points)
+        
+        print(f"Initial furniture points: {len(points)}")
+        
+        # Downsample if too many points to avoid memory issues
+        if len(points) > 1000000:
+            print(f"Downsampling from {len(points)} points to reduce memory usage...")
+            indices = np.random.choice(len(points), 1000000, replace=False)
+            points = points[indices]
+            print(f"Downsampled to {len(points)} points")
 
         # Determine appropriate eps based on point density if adaptive eps is enabled
         eps = self._get_adaptive_eps(points) if self.config.use_adaptive_eps else self.config.dbscan_eps
 
-        print(f"Clustering {len(points)} furniture points with DBSCAN")
+        print(f"Clustering {len(points)} furniture points with DBSCAN (eps={eps:.3f}, min_samples={self.config.dbscan_min_samples})")
 
         # DBSCAN in sklearn should work for 3d space
         # https://stackoverflow.com/questions/26246015/python-dbscan-in-3-dimensional-space

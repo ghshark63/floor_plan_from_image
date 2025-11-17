@@ -55,10 +55,10 @@ class SegmentationConfig:
 
 
 class ClusteringConfig:
-    def __init__(self, dbscan_eps: float = 0.15, dbscan_min_samples: int = 20,
-                 min_furniture_points: int = 50, max_furniture_height: float = 3.0,
-                 use_adaptive_eps: bool = True, eps_dense: float = 0.05,
-                 eps_medium: float = 0.10, eps_sparse: float = 0.15):
+    def __init__(self, dbscan_eps: float = 0.25, dbscan_min_samples: int = 20,
+                 min_furniture_points: int = 100, max_furniture_height: float = 3.0,
+                 use_adaptive_eps: bool = True, eps_dense: float = 0.15,
+                 eps_medium: float = 0.25, eps_sparse: float = 0.35):
         self.dbscan_eps = dbscan_eps
         self.dbscan_min_samples = dbscan_min_samples
         self.min_furniture_points = min_furniture_points
