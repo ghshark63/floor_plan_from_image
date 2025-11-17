@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from typing import List, Dict
 from config import FloorPlanConfig
-from src.furniture_clusterer import FurnitureCluster
+from furniture_clusterer import FurnitureCluster
 
 
 class FloorPlanVisualizer:

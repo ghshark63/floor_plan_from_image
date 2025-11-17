@@ -2,7 +2,7 @@ import numpy as np
 from typing import List, Dict, Any
 from collections import defaultdict
 from config import LabelingConfig
-from src.furniture_clusterer import FurnitureCluster
+from furniture_clusterer import FurnitureCluster
 
 
 class LabelProjector:
