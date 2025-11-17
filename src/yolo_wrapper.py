@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 from typing import List, Dict
 from config import DetectionConfig
 
@@ -7,12 +8,14 @@ class YOLODetector:
     def __init__(self, yolo_model, config: DetectionConfig):
         self.model = yolo_model
         self.config = config
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        print(f"YOLODetector using device: {self.device}")
 
     def detect_furniture(self, images: List[np.ndarray]) -> List[List[Dict]]:
         all_detections = []
 
         for img_idx, img in enumerate(images):
-            results = self.model(img, verbose=False)
+            results = self.model(img, verbose=False, device=self.device)
             image_detections = self._parse_results(results[0], img_idx)
             all_detections.append(image_detections)
 

@@ -48,10 +48,10 @@ class FloorPlanVisualizer:
 
         color_map = {}
         for furniture_class in furniture_classes:
-            # Generate random RGB values
-            r = random.randint(0, 255)
-            g = random.randint(0, 255)
-            b = random.randint(0, 255)
+            # Generate random RGB values (normalized to 0-1 range for matplotlib)
+            r = random.randint(0, 255) / 255.0
+            g = random.randint(0, 255) / 255.0
+            b = random.randint(0, 255) / 255.0
 
             color_map[furniture_class] = (r, g, b)
 
