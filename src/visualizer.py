@@ -15,7 +15,8 @@ class FloorPlanVisualizer:
     def generate_floor_plan(self, clusters: List[FurnitureCluster],
                             mesh_path: str,
                             texture_path: str = None, 
-                            output_path: str = "floor_plan.png") -> None:
+                            output_path: str = "floor_plan.png",
+                            alignment_matrix: Optional[np.ndarray] = None) -> None:
         """
         Generate 2D top-down view with labeled furniture bounding boxes and room background
         """
@@ -24,17 +25,33 @@ class FloorPlanVisualizer:
         fig, ax = plt.subplots(figsize=(12, 10))
 
         # 1. Render and draw background mesh
+        mesh_extent = None
         if os.path.exists(mesh_path):
-            bg_img, extent = self._render_top_down_view(mesh_path, texture_path)
+            bg_img, mesh_extent = self._render_top_down_view(mesh_path, texture_path, alignment_matrix)
             if bg_img is not None:
                 # origin='lower' places (0,0) at bottom-left
-                ax.imshow(bg_img, extent=extent, origin='lower', alpha=1.0)
+                ax.imshow(bg_img, extent=mesh_extent, origin='lower', alpha=1.0)
+                if self.config.debug:
+                    print(f"Rendered mesh extent (X, Z): {mesh_extent}")
         else:
             print(f"Warning: Mesh not found at {mesh_path}")
 
         # 2. Draw furniture clusters
+        clusters_outside_extent = 0
         for cluster in clusters:
+            # Validate cluster is within mesh extent
+            if mesh_extent is not None:
+                in_extent = self._validate_cluster_in_extent(cluster, mesh_extent)
+                if not in_extent:
+                    clusters_outside_extent += 1
+                    if self.config.debug:
+                        print(f"⚠️  Cluster '{cluster.label}' extends outside mesh extent")
+            
             self._draw_cluster(ax, cluster)
+        
+        if clusters_outside_extent > 0:
+            print(f"⚠️  WARNING: {clusters_outside_extent} cluster(s) extend outside mesh render extent")
+            print(f"   This may indicate alignment issues. Check debug output for details.")
 
         # Set plot properties
         ax.set_xlabel('X')
@@ -52,7 +69,7 @@ class FloorPlanVisualizer:
         print(f"Floor plan saved to {output_path}")
         plt.show()
 
-    def _render_top_down_view(self, mesh_path: str, texture_path: str = None) -> Tuple[Optional[np.ndarray], List[float]]:
+    def _render_top_down_view(self, mesh_path: str, texture_path: str = None, alignment_matrix: Optional[np.ndarray] = None) -> Tuple[Optional[np.ndarray], List[float]]:
         import trimesh
         import numpy as np
         import open3d as o3d
@@ -69,15 +86,41 @@ class FloorPlanVisualizer:
                 if len(tm_mesh.geometry) == 0: return None, []
                 tm_mesh = tm_mesh.dump(concatenate=True)
 
+            # Apply alignment if provided
+            if alignment_matrix is not None:
+                print("Applying alignment matrix to mesh...")
+                if self.config.debug:
+                    print(f"Alignment matrix:\n{alignment_matrix}")
+                    print(f"Vertex 0 before: {tm_mesh.vertices[0]}")
+                
+                # Convert 3x3 rotation to 4x4 transform
+                transform = np.eye(4)
+                transform[:3, :3] = alignment_matrix
+                tm_mesh.apply_transform(transform)
+                
+                if self.config.debug:
+                    print(f"Vertex 0 after: {tm_mesh.vertices[0]}")
+
             # 2. CROP (Geometry first)
-            # We calculate the crop based on original vertices
+            # We calculate the crop based on aligned vertices
             vertices = tm_mesh.vertices
             y_values = vertices[:, 1]
             y_min, y_max = y_values.min(), y_values.max()
-            cutoff = y_min + ((y_max - y_min) * 0.8)
+            
+            # Apply configurable crop ratio (default 1.0 = no cropping)
+            crop_ratio = self.config.mesh_height_crop_ratio
+            cutoff = y_min + ((y_max - y_min) * crop_ratio)
+            
+            if self.config.debug:
+                print(f"Mesh Y range: [{y_min:.3f}, {y_max:.3f}]")
+                print(f"Crop ratio: {crop_ratio:.2f} (cutoff at Y={cutoff:.3f})")
             
             # Filter faces
             face_mask = (y_values[tm_mesh.faces] <= cutoff).all(axis=1)
+            removed_faces = len(tm_mesh.faces) - np.sum(face_mask)
+            if removed_faces > 0:
+                print(f"Removed {removed_faces} faces above Y={cutoff:.3f} (crop ratio: {crop_ratio:.2f})")
+            
             tm_mesh.update_faces(face_mask)
             tm_mesh.remove_unreferenced_vertices()
 
@@ -142,34 +185,108 @@ class FloorPlanVisualizer:
             
             # 6. Render
             aabb = mesh.get_axis_aligned_bounding_box()
+            min_b = aabb.get_min_bound()
+            max_b = aabb.get_max_bound()
+            center = aabb.get_center()
             
             vis = o3d.visualization.Visualizer()
             vis.create_window(visible=False, width=2048, height=2048)
             vis.add_geometry(mesh)
             
             opt = vis.get_render_option()
-            opt.background_color = np.asarray([1.0, 1.0, 1.0]) 
             opt.light_on = True 
             opt.mesh_show_back_face = True
 
             ctr = vis.get_view_control()
             ctr.set_front([0, -1, 0])
-            ctr.set_lookat(aabb.get_center())
+            ctr.set_lookat(center)
             ctr.set_up([0, 0, 1])
-            ctr.set_zoom(0.45)
+            
+            # Switch to orthographic view for correct floor plan projection
+            ctr.change_field_of_view(step=-90)
+            
+            # --- CALIBRATION STEP ---
+            # Render with a distinct background color to measure the exact pixel footprint of the mesh.
+            # This allows us to calculate the precise pixels-per-world-unit ratio.
+            calibration_bg = np.asarray([1.0, 0.0, 1.0]) # Magenta
+            opt.background_color = calibration_bg
             
             for _ in range(5):
                 vis.poll_events()
                 vis.update_renderer()
                 time.sleep(0.05)
                 
+            calib_image = vis.capture_screen_float_buffer(do_render=True)
+            calib_np = np.asarray(calib_image)
+            
+            # Find bounding box of non-background pixels
+            # Check for pixels that are NOT magenta (allow small tolerance for anti-aliasing/compression)
+            mask = np.any(np.abs(calib_np - calibration_bg) > 0.01, axis=2)
+            
+            rows = np.any(mask, axis=1)
+            cols = np.any(mask, axis=0)
+            
+            if not np.any(rows) or not np.any(cols):
+                print("⚠️  Warning: Could not detect mesh in rendered image for calibration. Using default scaling.")
+                # Fallback to AABB-based extent (assuming fit is tight, which is usually wrong but best guess)
+                range_x = max_b[0] - min_b[0]
+                range_z = max_b[2] - min_b[2]
+                max_span = max(range_x, range_z)
+                extent_size = max_span
+            else:
+                ymin, ymax = np.where(rows)[0][[0, -1]]
+                xmin, xmax = np.where(cols)[0][[0, -1]]
+                
+                pixel_width = xmax - xmin
+                pixel_height = ymax - ymin
+                
+                world_width = max_b[0] - min_b[0]
+                world_height = max_b[2] - min_b[2]
+                
+                # Calculate pixels per world unit
+                # We use the average of X and Z ratios for robustness, though they should be identical in orthographic
+                ppu_x = pixel_width / world_width if world_width > 0 else 0
+                ppu_z = pixel_height / world_height if world_height > 0 else 0
+                
+                if ppu_x == 0 or ppu_z == 0:
+                     ppu = max(ppu_x, ppu_z)
+                else:
+                     ppu = (ppu_x + ppu_z) / 2
+                
+                if ppu <= 0:
+                    print("⚠️  Warning: Invalid PPU calculated. Using fallback.")
+                    extent_size = max(world_width, world_height)
+                else:
+                    # Calculate the total world size covered by the 2048x2048 image
+                    extent_size = 2048 / ppu
+                    if self.config.debug:
+                        print(f"Calibration: Mesh World Size: {world_width:.2f}x{world_height:.2f}")
+                        print(f"Calibration: Mesh Pixel Size: {pixel_width}x{pixel_height}")
+                        print(f"Calibration: PPU: {ppu:.2f} -> Extent Size: {extent_size:.2f}")
+
+            # Calculate final extent centered on the mesh center
+            extent = [
+                center[0] - extent_size / 2,
+                center[0] + extent_size / 2,
+                center[2] - extent_size / 2,
+                center[2] + extent_size / 2
+            ]
+
+            # --- FINAL RENDER ---
+            # Switch background to white for the final output
+            opt.background_color = np.asarray([1.0, 1.0, 1.0])
+            vis.update_renderer()
+            time.sleep(0.05)
+            
             image = vis.capture_screen_float_buffer(do_render=True)
             vis.destroy_window()
             
             image_np = np.asarray(image)
-            min_b = aabb.get_min_bound()
-            max_b = aabb.get_max_bound()
-            extent = [min_b[0], max_b[0], min_b[2], max_b[2]]
+            
+            # Flip horizontally because Camera Right (-X) is opposite to Plot Right (+X)
+            image_np = np.fliplr(image_np)
+            # Flip vertically because Open3D Row 0 is Top (+Z), but imshow origin='lower' expects Row 0 at Bottom (-Z)
+            image_np = np.flipud(image_np)
             
             return image_np, extent
 
@@ -212,6 +329,24 @@ class FloorPlanVisualizer:
             ha='center', va='center', fontsize=8, color='white', weight='bold'
         )
         ax.plot(min_x + width/2, min_z + height/2, 'o', color=color, markersize=3)
+
+    def _validate_cluster_in_extent(self, cluster: FurnitureCluster, extent: List[float]) -> bool:
+        """
+        Check if cluster bounding box is within rendered mesh extent.
+        extent = [x_min, x_max, z_min, z_max]
+        Returns True if cluster is fully within bounds, False otherwise.
+        """
+        bbox = cluster.bbox_3d
+        x_min = bbox.left_down_corner[0]
+        x_max = bbox.right_up_corner[0]
+        z_min = bbox.left_down_corner[2]
+        z_max = bbox.right_up_corner[2]
+        
+        # Check if cluster is within extent
+        within_x = extent[0] <= x_min and x_max <= extent[1]
+        within_z = extent[2] <= z_min and z_max <= extent[3]
+        
+        return within_x and within_z
 
     def _add_legend(self, ax, clusters: List[FurnitureCluster]):
         from matplotlib.lines import Line2D

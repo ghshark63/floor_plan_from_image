@@ -84,12 +84,15 @@ class LabelingConfig:
 class FloorPlanConfig:
     def __init__(self, simplify_footprint_threshold: int = 8,
                  units: str = "meters", coordinate_system: str = "XZ (Y-up, floor at Y=0)",
-                 mesh_path: str = "test/final.ply", texture_path: str = None):
+                 mesh_path: str = "test/final.ply", texture_path: str = None,
+                 mesh_height_crop_ratio: float = 1.0, debug: bool = False):
         self.simplify_footprint_threshold = simplify_footprint_threshold
         self.units = units
         self.coordinate_system = coordinate_system
         self.mesh_path = mesh_path
         self.texture_path = texture_path
+        self.mesh_height_crop_ratio = mesh_height_crop_ratio  # 1.0 = no crop, 0.8 = 80% crop
+        self.debug = debug
 
 
 class CameraConfig:

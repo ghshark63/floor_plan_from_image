@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 import numpy as np
-from typing import List
+from typing import List, Tuple, Optional
 from config import SegmentationConfig
 from open3d.cpu.pybind.geometry import PointCloud
 
@@ -18,6 +18,10 @@ class SegmentationResult:
     wall_indices: List[int]
     ceil_indices: List[int]
     furniture_indices: List[int]
+    
+    # Plane models
+    floor_plane: Optional[np.ndarray] = None
+    wall_normals: Optional[List[np.ndarray]] = None
 
 class StructuralSegmenter:
     def __init__(self, config: SegmentationConfig):
@@ -30,13 +34,13 @@ class StructuralSegmenter:
         points = np.asarray(point_cloud.points)
 
         print("Detecting floor plane")
-        floor_indices = self.detect_floor(point_cloud)
+        floor_indices, floor_plane = self.detect_floor(point_cloud)
 
         print("Detecting ceiling")
         ceil_indices = self.detect_ceil(point_cloud, floor_indices)
 
         print("Detecting walls")
-        wall_indices = self.detect_walls(point_cloud, floor_indices, ceil_indices)
+        wall_indices, wall_normals = self.detect_walls(point_cloud, floor_indices, ceil_indices)
 
         # Remaining points are potential furniture
         all_indices = set(range(len(points)))
@@ -55,14 +59,17 @@ class StructuralSegmenter:
             wall_indices=wall_indices,
             ceil_indices=ceil_indices,
             furniture_indices=furniture_indices,
+            floor_plane=floor_plane,
+            wall_normals=wall_normals
         )
 
-    def detect_floor(self, point_cloud: PointCloud) -> List[int]:
+    def detect_floor(self, point_cloud: PointCloud) -> Tuple[List[int], Optional[np.ndarray]]:
         if len(point_cloud.points) < 100:
             raise Exception("Too few points for floor detection")
 
         points_array = np.asarray(point_cloud.points)
         best_global_inliers = []
+        best_plane_model = None
         max_inliers = 0
 
         available_global_indices = list(range(len(point_cloud.points)))
@@ -95,10 +102,11 @@ class StructuralSegmenter:
                     if len(inlier_points) > 0:
                         y_values = inlier_points[:, 1]
                         median_y = np.median(y_values)
-                        percentile_25 = np.percentile(points_array[:, 1], 25)
-                        print(f"  Floor plane median Y: {median_y:.3f}, 25th percentile: {percentile_25:.3f}")
-                        if median_y < percentile_25:
+                        percentile_40 = np.percentile(points_array[:, 1], 40)
+                        print(f"  Floor plane median Y: {median_y:.3f}, 40th percentile: {percentile_40:.3f}")
+                        if median_y < percentile_40:
                             best_global_inliers = global_inliers
+                            best_plane_model = plane_model
                             max_inliers = len(global_inliers)
                             print(f"  ✓ Accepted as floor plane")
                         else:
@@ -115,7 +123,7 @@ class StructuralSegmenter:
             available_global_indices = [available_global_indices[i] for i in remaining_local_indices]
 
         print(f"Number of inliers for floor: {len(best_global_inliers)}")
-        return best_global_inliers
+        return best_global_inliers, best_plane_model
 
 
     def detect_ceil(self, point_cloud: PointCloud,
@@ -184,17 +192,18 @@ class StructuralSegmenter:
         return best_global_inliers
 
     def detect_walls(self, pcd: PointCloud,
-                     floor_indices: List[int], ceil_indices: List[int]) -> List[int]:
+                     floor_indices: List[int], ceil_indices: List[int]) -> Tuple[List[int], List[np.ndarray]]:
         points = np.asarray(pcd.points)
         all_indices = set(range(len(points)))
         floor_and_ceil = set(floor_indices) | set(ceil_indices)
         available_global_indices = list(all_indices - floor_and_ceil)
 
         if len(available_global_indices) < 100:
-            return []
+            return [], []
 
         tmp_pcd: PointCloud = pcd.select_by_index(available_global_indices)
         wall_global_indices = []
+        wall_normals = []
         min_wall_points = int(len(tmp_pcd.points) * self.config.min_wall_points_ratio)
 
         for wall_num in range(self.config.max_walls):
@@ -218,6 +227,7 @@ class StructuralSegmenter:
             if horizontal_component < self.config.wall_vertical_threshold:
                 global_inliers = [available_global_indices[i] for i in local_inliers]
                 wall_global_indices.extend(global_inliers)
+                wall_normals.append(normal)
                 print(f"Wall {wall_num + 1}: {len(global_inliers)} points")
 
             remaining_local_indices = list(set(range(len(tmp_pcd.points))) - set(local_inliers))
@@ -225,4 +235,4 @@ class StructuralSegmenter:
             tmp_pcd = tmp_pcd.select_by_index(remaining_local_indices)
             available_global_indices = [available_global_indices[i] for i in remaining_local_indices]
 
-        return wall_global_indices
+        return wall_global_indices, wall_normals
