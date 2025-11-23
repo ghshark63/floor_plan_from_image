@@ -38,7 +38,16 @@ class FloorPlanGenerator:
         print(f"Loaded point cloud from {point_cloud_path} with {len(point_cloud.points)} points.")
         
         # Align point cloud to canonical orientation based on camera orientations
-        point_cloud, alignment_rotation = self._align_reconstruction(point_cloud, cameras)
+        point_cloud, R_cam = self._align_reconstruction(point_cloud, cameras)
+        
+        # Refine alignment using floor plane
+        point_cloud, R_floor = self._align_to_floor(point_cloud, cameras)
+        
+        # Refine alignment using wall planes (align to axes)
+        point_cloud, R_walls = self._align_to_walls(point_cloud, cameras)
+        
+        alignment_rotation = R_walls @ R_floor @ R_cam
+        print(f"Total alignment rotation:\n{alignment_rotation}")
         
         processed_pcd = self.point_cloud_processor.preprocess(point_cloud)
 
@@ -58,7 +67,8 @@ class FloorPlanGenerator:
             labeled_clusters,
             mesh_path=self.config.floor_plan.mesh_path,
             texture_path=self.config.floor_plan.texture_path,
-            output_path=output_path
+            output_path=output_path,
+            alignment_matrix=alignment_rotation
         )
 
     def _align_reconstruction(self, point_cloud: o3d.geometry.PointCloud, 
@@ -127,6 +137,141 @@ class FloorPlanGenerator:
             cam['rotation'] = cam['rotation'] @ R_align.T
         
         return point_cloud, R_align
+
+    def _align_to_floor(self, point_cloud: o3d.geometry.PointCloud, 
+                       cameras: List[Dict[str, Any]]) -> tuple:
+        """
+        Refine alignment by detecting the floor plane and aligning its normal to [0, 1, 0].
+        """
+        print("Refining alignment using floor plane detection...")
+        
+        # Detect floor plane
+        # We use the segmenter's detect_floor method directly
+        try:
+            _, floor_model = self.segmenter.detect_floor(point_cloud)
+        except Exception as e:
+            print(f"Floor detection failed during alignment: {e}")
+            return point_cloud, np.eye(3)
+            
+        if floor_model is None:
+            print("No valid floor plane found for alignment refinement.")
+            return point_cloud, np.eye(3)
+            
+        # Extract normal
+        a, b, c, d = floor_model
+        floor_normal = np.array([a, b, c])
+        floor_normal = floor_normal / np.linalg.norm(floor_normal)
+        
+        print(f"Detected floor normal: {floor_normal}")
+        
+        # Target up direction (Y-axis)
+        target_up = np.array([0, 1, 0])
+        
+        # Check if normal points up or down. We want it to point UP (Y+)
+        if np.dot(floor_normal, target_up) < 0:
+            print("Flipping floor normal to match general up direction")
+            floor_normal = -floor_normal
+            
+        # Compute rotation to align floor_normal with target_up
+        v = np.cross(floor_normal, target_up)
+        s = np.linalg.norm(v)
+        c = np.dot(floor_normal, target_up)
+        
+        if s < 1e-6:
+            print("Floor already aligned")
+            return point_cloud, np.eye(3)
+            
+        vx = np.array([
+            [0, -v[2], v[1]],
+            [v[2], 0, -v[0]],
+            [-v[1], v[0], 0]
+        ])
+        
+        R_refine = np.eye(3) + vx + vx @ vx * ((1 - c) / (s * s))
+        
+        print(f"Applying refinement rotation...")
+        print(f"New floor normal: {R_refine @ floor_normal}")
+        
+        # Apply rotation
+        point_cloud.rotate(R_refine, center=(0, 0, 0))
+        
+        # Update cameras
+        for cam in cameras:
+            cam['rotation'] = cam['rotation'] @ R_refine.T
+            
+        return point_cloud, R_refine
+
+    def _align_to_walls(self, point_cloud: o3d.geometry.PointCloud, 
+                       cameras: List[Dict[str, Any]]) -> tuple:
+        """
+        Refine alignment by detecting walls and aligning them to X/Z axes.
+        Assumes floor is already aligned to XZ plane (Y-up).
+        """
+        print("Refining alignment using wall plane detection...")
+        
+        try:
+            # Re-detect structure in the currently aligned frame
+            floor_indices, _ = self.segmenter.detect_floor(point_cloud)
+            ceil_indices = self.segmenter.detect_ceil(point_cloud, floor_indices)
+            _, wall_normals = self.segmenter.detect_walls(point_cloud, floor_indices, ceil_indices)
+        except Exception as e:
+            print(f"Wall detection failed during alignment: {e}")
+            return point_cloud, np.eye(3)
+            
+        if not wall_normals:
+            print("No walls found for alignment refinement.")
+            return point_cloud, np.eye(3)
+            
+        # Project normals to XZ plane
+        projected_normals = []
+        for n in wall_normals:
+            # Ignore Y component
+            n_xz = np.array([n[0], n[2]])
+            norm = np.linalg.norm(n_xz)
+            if norm > 0.1: 
+                projected_normals.append(n_xz / norm)
+        
+        if not projected_normals:
+            return point_cloud, np.eye(3)
+            
+        projected_normals = np.array(projected_normals)
+        
+        # Calculate angles in degrees [0, 360)
+        angles = np.degrees(np.arctan2(projected_normals[:, 1], projected_normals[:, 0]))
+        angles = np.mod(angles, 360)
+        
+        # Map to [0, 90) to find dominant grid orientation
+        # We assume walls are mostly orthogonal
+        angles_mod = np.mod(angles, 90)
+        
+        # Use histogram to find peak
+        hist, bin_edges = np.histogram(angles_mod, bins=90, range=(0, 90))
+        best_bin = np.argmax(hist)
+        best_angle_deg = (bin_edges[best_bin] + bin_edges[best_bin+1]) / 2
+        
+        print(f"Dominant wall orientation (mod 90): {best_angle_deg:.2f} degrees")
+        
+        # Rotate to align this peak to 0 degrees (X-axis)
+        # We rotate around Y axis
+        rotation_angle_rad = np.radians(-best_angle_deg)
+        
+        c = np.cos(rotation_angle_rad)
+        s = np.sin(rotation_angle_rad)
+        
+        R_wall = np.array([
+            [c, 0, -s],
+            [0, 1, 0],
+            [s, 0, c]
+        ])
+        
+        print(f"Aligning walls by rotating {np.degrees(rotation_angle_rad):.2f} degrees around Y")
+        
+        point_cloud.rotate(R_wall, center=(0, 0, 0))
+        
+        for cam in cameras:
+            cam['rotation'] = cam['rotation'] @ R_wall.T
+            
+        return point_cloud, R_wall
 
 
 def load_cameras_from_colmap(sparse_path: str) -> List[Dict[str, Any]]:
