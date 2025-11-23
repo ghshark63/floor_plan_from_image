@@ -36,6 +36,10 @@ class FloorPlanGenerator:
         print("Loading point cloud...")
         point_cloud = o3d.io.read_point_cloud(point_cloud_path)
         print(f"Loaded point cloud from {point_cloud_path} with {len(point_cloud.points)} points.")
+        
+        # Align point cloud to canonical orientation based on camera orientations
+        point_cloud, alignment_rotation = self._align_reconstruction(point_cloud, cameras)
+        
         processed_pcd = self.point_cloud_processor.preprocess(point_cloud)
 
         # Detect furniture in 2d
@@ -50,7 +54,78 @@ class FloorPlanGenerator:
             clusters, detections, cameras
         )
 
-        self.floor_plan_visualizer.generate_floor_plan(labeled_clusters, output_path)
+        self.floor_plan_visualizer.generate_floor_plan(
+            labeled_clusters,
+            mesh_path=self.config.floor_plan.mesh_path,
+            output_path=output_path
+        )
+
+    def _align_reconstruction(self, point_cloud: o3d.geometry.PointCloud, 
+                             cameras: List[Dict[str, Any]]) -> tuple:
+        """
+        Align reconstruction to canonical orientation using camera viewing directions.
+        Assumes cameras look horizontally (at walls), not at floor/ceiling.
+        """
+        print("Aligning reconstruction to canonical orientation...")
+        
+        # Extract camera viewing directions (negative Z-axis in camera frame)
+        # In camera frame, looking direction is typically -Z axis
+        viewing_dirs = []
+        up_dirs = []
+        
+        for cam in cameras:
+            R = cam['rotation']
+            # Camera coordinate system: X-right, Y-down, Z-forward
+            # World viewing direction is R.T @ [0, 0, 1] (Z-axis of camera in world coords)
+            viewing_dir = R.T @ np.array([0, 0, 1])
+            up_dir = R.T @ np.array([0, -1, 0])  # Y-axis (inverted because camera Y is down)
+            
+            viewing_dirs.append(viewing_dir)
+            up_dirs.append(up_dir)
+        
+        viewing_dirs = np.array(viewing_dirs)
+        up_dirs = np.array(up_dirs)
+        
+        # Average up direction across all cameras
+        mean_up = np.mean(up_dirs, axis=0)
+        mean_up = mean_up / np.linalg.norm(mean_up)
+        
+        print(f"Current 'up' direction in world coords: {mean_up}")
+        
+        # Target up direction should be [0, 1, 0] (Y-axis up)
+        target_up = np.array([0, 1, 0])
+        
+        # Compute rotation to align mean_up with target_up
+        # Using Rodrigues' rotation formula
+        v = np.cross(mean_up, target_up)
+        s = np.linalg.norm(v)
+        c = np.dot(mean_up, target_up)
+        
+        if s < 1e-6:  # Already aligned
+            print("Reconstruction already aligned")
+            return point_cloud, np.eye(3)
+        
+        # Skew-symmetric cross-product matrix
+        vx = np.array([
+            [0, -v[2], v[1]],
+            [v[2], 0, -v[0]],
+            [-v[1], v[0], 0]
+        ])
+        
+        # Rotation matrix
+        R_align = np.eye(3) + vx + vx @ vx * ((1 - c) / (s * s))
+        
+        print(f"Applying alignment rotation...")
+        print(f"New 'up' direction: {R_align @ mean_up}")
+        
+        # Apply rotation to point cloud
+        point_cloud.rotate(R_align, center=(0, 0, 0))
+        
+        # Update camera rotations to match
+        for cam in cameras:
+            cam['rotation'] = cam['rotation'] @ R_align.T
+        
+        return point_cloud, R_align
 
 
 def load_cameras_from_colmap(sparse_path: str) -> List[Dict[str, Any]]:

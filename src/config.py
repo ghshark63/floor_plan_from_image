@@ -27,15 +27,15 @@ class PointCloudConfig:
 
 class SegmentationConfig:
     def __init__(self,
-                 floor_distance_threshold: float = 0.02,
-                 ceil_distance_threshold: float = 0.02,
-                 wall_distance_threshold: float = 0.03,
+                 floor_distance_threshold: float = 0.05,
+                 ceil_distance_threshold: float = 0.05,
+                 wall_distance_threshold: float = 0.08,
 
                  plane_ransac_n: int = 3, plane_ransac_iterations: int = 1000,
 
-                 floor_horizontal_threshold: float = 0.85,
-                 ceil_horizontal_threshold: float = 0.85,
-                 wall_vertical_threshold: float = 0.3,
+                 floor_horizontal_threshold: float = 0.4,
+                 ceil_horizontal_threshold: float = 0.4,
+                 wall_vertical_threshold: float = 0.7,
 
                  max_walls: int = 6, min_wall_points_ratio: float = 0.03):
 
@@ -55,8 +55,8 @@ class SegmentationConfig:
 
 
 class ClusteringConfig:
-    def __init__(self, dbscan_eps: float = 0.25, dbscan_min_samples: int = 20,
-                 min_furniture_points: int = 100, max_furniture_height: float = 3.0,
+    def __init__(self, dbscan_eps: float = 0.25, dbscan_min_samples: int = 50,
+                 min_furniture_points: int = 150, max_furniture_height: float = 7.0,
                  use_adaptive_eps: bool = True, eps_dense: float = 0.15,
                  eps_medium: float = 0.25, eps_sparse: float = 0.35):
         self.dbscan_eps = dbscan_eps
@@ -87,6 +87,7 @@ class FloorPlanConfig:
         self.simplify_footprint_threshold = simplify_footprint_threshold
         self.units = units
         self.coordinate_system = coordinate_system
+        self.mesh_path = "test/final.ply"
 
 
 class CameraConfig:
