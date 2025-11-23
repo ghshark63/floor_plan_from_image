@@ -75,6 +75,8 @@ class StructuralSegmenter:
                 num_iterations=self.config.plane_ransac_iterations
             )
 
+            print(f"  Floor attempt {attempt + 1}: found {len(local_inliers)} inliers")
+            
             if len(local_inliers) > max_inliers:
                 # Convert local inliers to global inliers
                 global_inliers = [available_global_indices[i] for i in local_inliers]
@@ -82,6 +84,7 @@ class StructuralSegmenter:
                 # Basic equation: a*x + b*y + c*z + d = 0
                 a, b, c, d = plane_model
                 normal = np.array([a, b, c]) / np.linalg.norm([a, b, c])
+                print(f"  Plane normal: {normal}, vertical component: {np.abs(normal[1]):.3f}")
 
                 # Check if horizontal
                 vertical_dot = np.abs(normal[1])
@@ -91,9 +94,19 @@ class StructuralSegmenter:
                     inlier_points = points_array[global_inliers]
                     if len(inlier_points) > 0:
                         y_values = inlier_points[:, 1]
-                        if np.median(y_values) < np.percentile(points_array[:, 1], 25):
+                        median_y = np.median(y_values)
+                        percentile_25 = np.percentile(points_array[:, 1], 25)
+                        print(f"  Floor plane median Y: {median_y:.3f}, 25th percentile: {percentile_25:.3f}")
+                        if median_y < percentile_25:
                             best_global_inliers = global_inliers
                             max_inliers = len(global_inliers)
+                            print(f"  ✓ Accepted as floor plane")
+                        else:
+                            print(f"  ✗ Rejected: not at bottom of point cloud")
+                    else:
+                        print(f"  ✗ Rejected: plane is horizontal but position check failed")
+                else:
+                    print(f"  ✗ Rejected: not horizontal enough (threshold: {self.config.floor_horizontal_threshold})")
 
             # Remove detected plane and try again
             remaining_local_indices = list(set(range(len(tmp_pcd.points))) - set(local_inliers))
@@ -129,12 +142,15 @@ class StructuralSegmenter:
                 num_iterations=self.config.plane_ransac_iterations
             )
 
+            print(f"  Ceiling attempt {attempt + 1}: found {len(local_inliers)} inliers")
+            
             if len(local_inliers) > max_inliers:
                 # Convert local inliers to global inliers
                 global_inliers = [available_global_indices[i] for i in local_inliers]
 
                 a, b, c, d = plane_model
                 normal = np.array([a, b, c]) / np.linalg.norm([a, b, c])
+                print(f"  Plane normal: {normal}, vertical component: {np.abs(normal[1]):.3f}")
 
                 # Check if horizontal
                 vertical_dot = np.abs(normal[1])
@@ -144,9 +160,19 @@ class StructuralSegmenter:
                     inlier_points = points_array[local_inliers]
                     if len(inlier_points) > 0:
                         y_values = inlier_points[:, 1]
-                        if np.median(y_values) > np.percentile(points_array[:, 1], 75):
+                        median_y = np.median(y_values)
+                        percentile_75 = np.percentile(points_array[:, 1], 75)
+                        print(f"  Ceiling plane median Y: {median_y:.3f}, 75th percentile: {percentile_75:.3f}")
+                        if median_y > percentile_75:
                             best_global_inliers = global_inliers
                             max_inliers = len(global_inliers)
+                            print(f"  ✓ Accepted as ceiling plane")
+                        else:
+                            print(f"  ✗ Rejected: not at top of point cloud")
+                    else:
+                        print(f"  ✗ Rejected: plane is horizontal but position check failed")
+                else:
+                    print(f"  ✗ Rejected: not horizontal enough (threshold: {self.config.ceil_horizontal_threshold})")
 
             # Remove detected plane and continue
             remaining_local_indices = list(set(range(len(tmp_pcd.points))) - set(local_inliers))
@@ -181,11 +207,14 @@ class StructuralSegmenter:
                 num_iterations=self.config.plane_ransac_iterations
             )
 
+            print(f"  Wall attempt {wall_num + 1}: found {len(local_inliers)} inliers")
+            
             a, b, c, d = plane_model
             normal = np.array([a, b, c]) / np.linalg.norm([a, b, c])
+            horizontal_component = np.abs(normal[1])
+            print(f"  Plane normal: {normal}, horizontal component: {horizontal_component:.3f}")
 
             # Check if vertical
-            horizontal_component = np.abs(normal[1])
             if horizontal_component < self.config.wall_vertical_threshold:
                 global_inliers = [available_global_indices[i] for i in local_inliers]
                 wall_global_indices.extend(global_inliers)

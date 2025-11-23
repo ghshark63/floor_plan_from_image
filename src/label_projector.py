@@ -45,7 +45,139 @@ class LabelProjector:
         # Assign final labels based on voting
         labeled_clusters = self._assign_final_labels(clusters)
 
-        return labeled_clusters
+        # Merge overlapping clusters
+        merged_clusters = self._merge_overlapping_clusters(labeled_clusters)
+        
+        # Filter out small unknown clusters
+        final_clusters = self._filter_clusters(merged_clusters)
+
+        return final_clusters
+
+    def _merge_overlapping_clusters(self, clusters: List[FurnitureCluster]) -> List[FurnitureCluster]:
+        """Merge overlapping clusters with compatible labels"""
+        print(f"Merging overlapping clusters (initial: {len(clusters)})")
+        from furniture_clusterer import BBox3d  # Import here to avoid circular dependency
+        
+        merged = True
+        while merged:
+            merged = False
+            new_clusters = []
+            skip_indices = set()
+            
+            # Sort by number of points (descending) to merge smaller into larger
+            clusters.sort(key=lambda c: c.num_points, reverse=True)
+            
+            for i in range(len(clusters)):
+                if i in skip_indices:
+                    continue
+                
+                current_cluster = clusters[i]
+                
+                for j in range(i + 1, len(clusters)):
+                    if j in skip_indices:
+                        continue
+                    
+                    other_cluster = clusters[j]
+                    
+                    if self._should_merge(current_cluster, other_cluster):
+                        # Merge j into i
+                        current_cluster = self._merge_clusters(current_cluster, other_cluster)
+                        skip_indices.add(j)
+                        merged = True
+                
+                new_clusters.append(current_cluster)
+            
+            clusters = new_clusters
+            if merged:
+                print(f"  Merged down to {len(clusters)} clusters")
+        
+        return clusters
+
+    def _should_merge(self, c1: FurnitureCluster, c2: FurnitureCluster) -> bool:
+        # Check overlap
+        if not self._check_overlap(c1.bbox_3d, c2.bbox_3d):
+            return False
+            
+        # Check labels
+        l1 = c1.label
+        l2 = c2.label
+        
+        # Always merge same labels
+        if l1 == l2:
+            return True
+            
+        # Merge unknown into known
+        if l1 == 'unknown' or l2 == 'unknown':
+            return True
+            
+        # Different known labels - don't merge
+        return False
+
+    def _check_overlap(self, bbox1, bbox2) -> bool:
+        # Check if bboxes intersect
+        # Check X
+        if bbox1.right_up_corner[0] < bbox2.left_down_corner[0] or \
+           bbox2.right_up_corner[0] < bbox1.left_down_corner[0]:
+            return False
+            
+        # Check Y (height)
+        if bbox1.right_up_corner[1] < bbox2.left_down_corner[1] or \
+           bbox2.right_up_corner[1] < bbox1.left_down_corner[1]:
+            return False
+
+        # Check Z
+        if bbox1.right_up_corner[2] < bbox2.left_down_corner[2] or \
+           bbox2.right_up_corner[2] < bbox1.left_down_corner[2]:
+            return False
+            
+        return True
+
+    def _merge_clusters(self, c1: FurnitureCluster, c2: FurnitureCluster) -> FurnitureCluster:
+        from furniture_clusterer import BBox3d
+        
+        # Combine points
+        new_points = np.vstack((c1.points, c2.points))
+        
+        # Combine votes
+        new_votes = c1.label_votes.copy()
+        if c2.label_votes:
+            for label, count in c2.label_votes.items():
+                new_votes[label] += count
+            
+        # Determine new label
+        new_label = c1.label
+        if c1.label == 'unknown' and c2.label != 'unknown':
+            new_label = c2.label
+        
+        # Recompute bbox
+        min_coords = np.min(new_points, axis=0)
+        max_coords = np.max(new_points, axis=0)
+        center = (min_coords + max_coords) / 2
+        
+        new_bbox = BBox3d(min_coords, max_coords, center)
+        
+        return FurnitureCluster(
+            points=new_points,
+            cluster_id=c1.cluster_id,
+            bbox_3d=new_bbox,
+            num_points=len(new_points),
+            label=new_label,
+            label_votes=new_votes
+        )
+
+    def _filter_clusters(self, clusters: List[FurnitureCluster]) -> List[FurnitureCluster]:
+        """Filter out noise clusters"""
+        filtered = []
+        for c in clusters:
+            # Remove unknown clusters that are likely noise
+            if c.label == 'unknown':
+                # If it's very small, drop it
+                if c.num_points < 100:
+                    continue
+            filtered.append(c)
+        
+        print(f"Filtered {len(clusters) - len(filtered)} noise clusters")
+        return filtered
 
     def _project_cluster_to_camera(self,
                                    cluster: FurnitureCluster,

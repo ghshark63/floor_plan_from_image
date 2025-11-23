@@ -74,7 +74,7 @@ class FurnitureClusterer:
             bbox = self._compute_bbox(cluster_points)
             height = bbox.right_up_corner[1] - bbox.left_down_corner[1]
             if height > self.config.max_furniture_height:
-                print("Detected box is too small")
+                print(f"Detected box is too tall: height={height:.2f}")
                 continue
 
             clusters.append(
