@@ -83,11 +83,13 @@ class LabelingConfig:
 
 class FloorPlanConfig:
     def __init__(self, simplify_footprint_threshold: int = 8,
-                 units: str = "meters", coordinate_system: str = "XZ (Y-up, floor at Y=0)"):
+                 units: str = "meters", coordinate_system: str = "XZ (Y-up, floor at Y=0)",
+                 mesh_path: str = "test/final.ply", texture_path: str = None):
         self.simplify_footprint_threshold = simplify_footprint_threshold
         self.units = units
         self.coordinate_system = coordinate_system
-        self.mesh_path = "test/final.ply"
+        self.mesh_path = mesh_path
+        self.texture_path = texture_path
 
 
 class CameraConfig:
@@ -111,11 +113,12 @@ class FloorPlanGeneratorConfig:
         self.camera = camera
 
     @classmethod
-    def default(cls, camera_intrinsics, image_size):
+    def default(cls, camera_intrinsics, image_size, texture_path=None):
         return cls(
             camera=CameraConfig(
                 intrinsics=camera_intrinsics,
                 image_width=image_size[0],
                 image_height=image_size[1]
-            )
+            ),
+            floor_plan=FloorPlanConfig(texture_path=texture_path)
         )
