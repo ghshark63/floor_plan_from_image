@@ -13,7 +13,8 @@ class FloorPlanVisualizer:
         self.color_map = self._generate_color_map()
 
     def generate_floor_plan(self, clusters: List[FurnitureCluster],
-                            mesh_path: str, 
+                            mesh_path: str,
+                            texture_path: str = None, 
                             output_path: str = "floor_plan.png") -> None:
         """
         Generate 2D top-down view with labeled furniture bounding boxes and room background
@@ -24,7 +25,7 @@ class FloorPlanVisualizer:
 
         # 1. Render and draw background mesh
         if os.path.exists(mesh_path):
-            bg_img, extent = self._render_top_down_view(mesh_path)
+            bg_img, extent = self._render_top_down_view(mesh_path, texture_path)
             if bg_img is not None:
                 # origin='lower' places (0,0) at bottom-left
                 ax.imshow(bg_img, extent=extent, origin='lower', alpha=1.0)
@@ -51,7 +52,7 @@ class FloorPlanVisualizer:
         print(f"Floor plan saved to {output_path}")
         plt.show()
 
-    def _render_top_down_view(self, mesh_path: str) -> Tuple[Optional[np.ndarray], List[float]]:
+    def _render_top_down_view(self, mesh_path: str, texture_path: str = None) -> Tuple[Optional[np.ndarray], List[float]]:
         import trimesh
         import numpy as np
         import open3d as o3d
@@ -120,6 +121,11 @@ class FloorPlanVisualizer:
             if hasattr(tm_mesh.visual, 'material') and hasattr(tm_mesh.visual.material, 'image'):
                 pil_img = tm_mesh.visual.material.image
 
+            if pil_img is None and texture_path:
+                if os.path.exists(texture_path):
+                    import PIL.Image
+                    pil_img = PIL.Image.open(texture_path)
+            
             if pil_img is None:
                 mesh_dir = os.path.dirname(os.path.abspath(mesh_path))
                 tex_path = os.path.join(mesh_dir, "textured0.png")

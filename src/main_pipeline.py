@@ -57,6 +57,7 @@ class FloorPlanGenerator:
         self.floor_plan_visualizer.generate_floor_plan(
             labeled_clusters,
             mesh_path=self.config.floor_plan.mesh_path,
+            texture_path=self.config.floor_plan.texture_path,
             output_path=output_path
         )
 
@@ -179,13 +180,15 @@ def run():
     POINT_CLOUD_PATH = "test/point_cloud.ply"
     SPARSE_PATH = "test/sparse/0"
     OUTPUT_PATH = "test/floor_plan.png"
+    TEXTURE_PATH = "test/textured0.png"
     
     # Load cameras from COLMAP
     cameras = load_cameras_from_colmap(SPARSE_PATH)
     
     config = FloorPlanGeneratorConfig.default(
         camera_intrinsics=cameras[0]['intrinsics'], 
-        image_size=(cameras[0]['image_width'], cameras[0]['image_height'])
+        image_size=(cameras[0]['image_width'], cameras[0]['image_height']),
+        texture_path=TEXTURE_PATH
     )
 
     # Initialize YOLO model
