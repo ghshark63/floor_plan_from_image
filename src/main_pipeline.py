@@ -352,7 +352,7 @@ def run():
     parser.add_argument("--images_dir", type=str, help="Path to images directory (default: output_dir/images)")
     parser.add_argument("--sparse_dir", type=str, help="Path to sparse reconstruction directory (default: output_dir/sparse)")
     parser.add_argument("--point_cloud", type=str, help="Path to point cloud file (default: output_dir/final.ply)")
-    parser.add_argument("--texture_path", type=str, help="Path to texture file (default: output_dir/textures.png)")
+    parser.add_argument("--texture_path", type=str, help="Path to texture file (default: output_dir/textured0.png)")
     parser.add_argument("--floor_plan_output", type=str, help="Path to output floor plan image (default: output_dir/floor_plan.png)")
     
     args = parser.parse_args()
@@ -364,7 +364,7 @@ def run():
     images_dir = args.images_dir if args.images_dir else os.path.join(output_dir, "images")
     sparse_dir = args.sparse_dir if args.sparse_dir else os.path.join(output_dir, "sparse")
     point_cloud_path = args.point_cloud if args.point_cloud else os.path.join(output_dir, "point_cloud.ply")
-    texture_path = args.texture_path if args.texture_path else os.path.join(output_dir, "textures.png")
+    texture_path = args.texture_path if args.texture_path else os.path.join(output_dir, "textured0.png")
     floor_plan_output = args.floor_plan_output if args.floor_plan_output else os.path.join(output_dir, "floor_plan.png")
     
     # Ensure output directory exists
