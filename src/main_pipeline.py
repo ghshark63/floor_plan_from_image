@@ -3,6 +3,8 @@ from typing import List, Dict, Any
 import open3d as o3d
 import glob
 import cv2
+import os
+import argparse
 from ultralytics import YOLO
 import pycolmap
 
@@ -13,6 +15,7 @@ from label_projector import LabelProjector
 from segmentation import StructuralSegmenter
 from visualizer import FloorPlanVisualizer
 from yolo_wrapper import YOLODetector
+from reconstruction import ReconstructionPipeline
 import traceback
 
 
@@ -340,18 +343,80 @@ def load_cameras_from_colmap(sparse_path: str) -> List[Dict[str, Any]]:
 
 
 def run():
-    POINT_CLOUD_PATH = "test/point_cloud.ply"
-    SPARSE_PATH = "test/sparse/0"
-    OUTPUT_PATH = "test/floor_plan.png"
-    TEXTURE_PATH = "test/textured0.png"
+    parser = argparse.ArgumentParser(description="Floor Plan Generator Pipeline")
+    parser.add_argument("--reconstruct", action="store_true", help="Run 3D reconstruction from video")
     
+    # Path arguments
+    parser.add_argument("--input_video", type=str, default="input/video.mp4", help="Path to input video file")
+    parser.add_argument("--output_dir", type=str, default="output", help="Path to output directory")
+    parser.add_argument("--images_dir", type=str, help="Path to images directory (default: output_dir/images)")
+    parser.add_argument("--sparse_dir", type=str, help="Path to sparse reconstruction directory (default: output_dir/sparse)")
+    parser.add_argument("--point_cloud", type=str, help="Path to point cloud file (default: output_dir/final.ply)")
+    parser.add_argument("--texture_path", type=str, help="Path to texture file (default: output_dir/textures.png)")
+    parser.add_argument("--floor_plan_output", type=str, help="Path to output floor plan image (default: output_dir/floor_plan.png)")
+    
+    args = parser.parse_args()
+
+    # Resolve paths
+    input_video = args.input_video
+    output_dir = args.output_dir
+    
+    images_dir = args.images_dir if args.images_dir else os.path.join(output_dir, "images")
+    sparse_dir = args.sparse_dir if args.sparse_dir else os.path.join(output_dir, "sparse")
+    point_cloud_path = args.point_cloud if args.point_cloud else os.path.join(output_dir, "final.ply")
+    texture_path = args.texture_path if args.texture_path else os.path.join(output_dir, "textures.png")
+    floor_plan_output = args.floor_plan_output if args.floor_plan_output else os.path.join(output_dir, "floor_plan.png")
+    
+    # Ensure output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+
+    if args.reconstruct:
+        print("Starting 3D Reconstruction...")
+        pipeline = ReconstructionPipeline(
+            root_dir=".",
+            input_video=input_video,
+            output_dir=output_dir,
+            images_dir=images_dir,
+            sparse_dir=sparse_dir,
+            texture_file_name=os.path.basename(texture_path)
+        )
+        pipeline.run()
+        
+        # After reconstruction, we expect the sparse model to be in sparse_dir/0
+        # But ReconstructionPipeline puts it in sparse_dir/0
+        sparse_model_path = os.path.join(sparse_dir, "0")
+    else:
+        # If not reconstructing, we assume the user provided paths to existing data
+        # If they didn't provide specific paths, we use the defaults (which point to output/)
+        # BUT, for backward compatibility or ease of use with test data, we might want to check if they exist?
+        # The user asked to "make them consistent across the pipeline".
+        # So we stick to the arguments.
+        sparse_model_path = os.path.join(sparse_dir, "0")
+        
+        # If the user wants to use test data, they should provide:
+        # --point_cloud test/point_cloud.ply --sparse_dir test/sparse --texture_path test/textured0.png --images_dir test/images
+    
+    print(f"Using Point Cloud: {point_cloud_path}")
+    print(f"Using Sparse Model: {sparse_model_path}")
+    print(f"Using Images: {images_dir}")
+    
+    if not os.path.exists(point_cloud_path):
+        print(f"Error: Point cloud not found at {point_cloud_path}")
+        if not args.reconstruct:
+            print("Try running with --reconstruct to generate it from input/video.mp4")
+        return
+
     # Load cameras from COLMAP
-    cameras = load_cameras_from_colmap(SPARSE_PATH)
+    try:
+        cameras = load_cameras_from_colmap(sparse_model_path)
+    except Exception as e:
+        print(f"Error loading cameras from {sparse_model_path}: {e}")
+        return
     
     config = FloorPlanGeneratorConfig.default(
         camera_intrinsics=cameras[0]['intrinsics'], 
         image_size=(cameras[0]['image_width'], cameras[0]['image_height']),
-        texture_path=TEXTURE_PATH
+        texture_path=texture_path
     )
 
     # Initialize YOLO model
@@ -365,12 +430,12 @@ def run():
     camera_dict = {cam['image_name']: cam for cam in cameras}
     
     # Load only images that have corresponding camera data
-    image_files = sorted(glob.glob("test/images/*.jpg") + glob.glob("test/images/*.png"))
+    image_files = sorted(glob.glob(os.path.join(images_dir, "*.jpg")) + glob.glob(os.path.join(images_dir, "*.png")))
     matched_images = []
     matched_cameras = []
     
     for img_path in image_files:
-        img_name = img_path.split('\\')[-1].split('/')[-1]  # Get filename
+        img_name = os.path.basename(img_path)  # Get filename
         
         if img_name in camera_dict:
             img = cv2.imread(img_path)
@@ -393,10 +458,10 @@ def run():
     
     try:
         results = generator.run_pipeline(
-            point_cloud_path=POINT_CLOUD_PATH,
+            point_cloud_path=point_cloud_path,
             images=images,
             cameras=cameras,
-            output_path=OUTPUT_PATH
+            output_path=floor_plan_output
         )
         print("Pipeline completed successfully!")
     except Exception as e:
