@@ -39,6 +39,12 @@ class FloorPlanVisualizer:
 
         # 2. Draw furniture clusters
         clusters_outside_extent = 0
+        
+        # Calculate center_x for flipping boxes (if mesh exists)
+        center_x = 0.0
+        if mesh_extent is not None:
+            center_x = (mesh_extent[0] + mesh_extent[1]) / 2.0
+
         for cluster in clusters:
             # Validate cluster is within mesh extent
             if mesh_extent is not None:
@@ -48,7 +54,7 @@ class FloorPlanVisualizer:
                     if self.config.debug:
                         print(f"⚠️  Cluster '{cluster.label}' extends outside mesh extent")
             
-            self._draw_cluster(ax, cluster)
+            self._draw_cluster(ax, cluster, center_x)
         
         if clusters_outside_extent > 0:
             print(f"⚠️  WARNING: {clusters_outside_extent} cluster(s) extend outside mesh render extent")
@@ -147,27 +153,27 @@ class FloorPlanVisualizer:
                 tm_mesh.remove_unreferenced_vertices()
 
             # 2. CROP (Geometry first)
-            # We calculate the crop based on aligned vertices
-            vertices = tm_mesh.vertices
-            y_values = vertices[:, 1]
-            y_min, y_max = y_values.min(), y_values.max()
+            # Cropping logic removed as per user request to avoid potential cropping of 3d mesh
+            # vertices = tm_mesh.vertices
+            # y_values = vertices[:, 1]
+            # y_min, y_max = y_values.min(), y_values.max()
             
-            # Apply configurable crop ratio (default 1.0 = no cropping)
-            crop_ratio = self.config.mesh_height_crop_ratio
-            cutoff = y_min + ((y_max - y_min) * crop_ratio)
+            # # Apply configurable crop ratio (default 1.0 = no cropping)
+            # crop_ratio = self.config.mesh_height_crop_ratio
+            # cutoff = y_min + ((y_max - y_min) * crop_ratio)
             
-            if self.config.debug:
-                print(f"Mesh Y range: [{y_min:.3f}, {y_max:.3f}]")
-                print(f"Crop ratio: {crop_ratio:.2f} (cutoff at Y={cutoff:.3f})")
+            # if self.config.debug:
+            #     print(f"Mesh Y range: [{y_min:.3f}, {y_max:.3f}]")
+            #     print(f"Crop ratio: {crop_ratio:.2f} (cutoff at Y={cutoff:.3f})")
             
-            # Filter faces
-            face_mask = (y_values[tm_mesh.faces] <= cutoff).all(axis=1)
-            removed_faces = len(tm_mesh.faces) - np.sum(face_mask)
-            if removed_faces > 0:
-                print(f"Removed {removed_faces} faces above Y={cutoff:.3f} (crop ratio: {crop_ratio:.2f})")
+            # # Filter faces
+            # face_mask = (y_values[tm_mesh.faces] <= cutoff).all(axis=1)
+            # removed_faces = len(tm_mesh.faces) - np.sum(face_mask)
+            # if removed_faces > 0:
+            #     print(f"Removed {removed_faces} faces above Y={cutoff:.3f} (crop ratio: {crop_ratio:.2f})")
             
-            tm_mesh.update_faces(face_mask)
-            tm_mesh.remove_unreferenced_vertices()
+            # tm_mesh.update_faces(face_mask)
+            # tm_mesh.remove_unreferenced_vertices()
 
             # 3. CONSTRUCT TRIANGLE SOUP (The "Nuclear Option")
             # We completely explode the mesh so every triangle has its own 3 vertices.
@@ -343,37 +349,59 @@ class FloorPlanVisualizer:
 
     # ... existing _generate_color_map, _draw_cluster, _add_legend methods ...
     def _generate_color_map(self) -> Dict[str, str]:
-        """Generate a color map with random RGB colors for furniture classes"""
+        """Generate a color map with bright RGB colors for furniture classes"""
         import random
+        import colorsys
         from config import DetectionConfig
         detection_config = DetectionConfig()
         furniture_classes = detection_config.furniture_classes + ['unknown']
         color_map = {}
+        
+        # Use golden ratio to spread hues evenly
+        golden_ratio_conjugate = 0.618033988749895
+        h = random.random()
+        
         for furniture_class in furniture_classes:
-            color_map[furniture_class] = (
-                random.random(), random.random(), random.random()
-            )
+            h += golden_ratio_conjugate
+            h %= 1
+            # High saturation and value for bright colors
+            s = 0.9 
+            v = 0.95
+            r, g, b = colorsys.hsv_to_rgb(h, s, v)
+            color_map[furniture_class] = (r, g, b)
+            
         return color_map
 
-    def _draw_cluster(self, ax, cluster: FurnitureCluster):
+    def _draw_cluster(self, ax, cluster: FurnitureCluster, center_x: float = 0.0):
         bbox_3d = cluster.bbox_3d
         label = cluster.label
+        
+        # Original coordinates
         min_x, min_z = bbox_3d.left_down_corner[0], bbox_3d.left_down_corner[2]
+        max_x = bbox_3d.right_up_corner[0]
+        
         width = bbox_3d.right_up_corner[0] - min_x
         height = bbox_3d.right_up_corner[2] - min_z
         color = self.color_map[label]
 
+        # Flip X coordinates around center_x
+        # new_min_x = center_x - (max_x - center_x) = 2*center_x - max_x
+        flipped_min_x = 2 * center_x - max_x
+        
+        # Translate 4 units down (Z axis)
+        translated_min_z = min_z - 4.0
+
         rect = patches.Rectangle(
-            (min_x, min_z), width, height,
+            (flipped_min_x, translated_min_z), width, height,
             linewidth=2, edgecolor=color, facecolor='none', alpha=0.8
         )
         ax.add_patch(rect)
         ax.text(
-            min_x + width/2, min_z + height/2, label,
+            flipped_min_x + width/2, translated_min_z + height/2, label,
             bbox=dict(boxstyle="round,pad=0.3", facecolor=color, alpha=0.7),
             ha='center', va='center', fontsize=8, color='white', weight='bold'
         )
-        ax.plot(min_x + width/2, min_z + height/2, 'o', color=color, markersize=3)
+        ax.plot(flipped_min_x + width/2, translated_min_z + height/2, 'o', color=color, markersize=3)
 
     def _validate_cluster_in_extent(self, cluster: FurnitureCluster, extent: List[float]) -> bool:
         """
