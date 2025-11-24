@@ -28,7 +28,7 @@ class ReconstructionPipeline:
                  output_dir: str = None,
                  images_dir: str = None,
                  sparse_dir: str = None,
-                 texture_file_name: str = "textures.png"):
+                 texture_file_name: str = "textured0.png"):
         self.root_dir = Path(root_dir).resolve()
         
         # Default paths if not provided
@@ -145,7 +145,7 @@ class ReconstructionPipeline:
         
         # Check for texture file and rename if necessary
         # OpenMVS usually names it based on output filename, e.g., final.png
-        # User wants 'textures.png' (or whatever is passed)
+        # User wants 'textured0.png' (or whatever is passed)
         # If final.ply is generated, check for final.png
         expected_texture = self.output_dir / "final.png"
         target_texture = self.output_dir / self.texture_file_name
