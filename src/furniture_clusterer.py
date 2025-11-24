@@ -39,11 +39,11 @@ class FurnitureClusterer:
         print(f"Initial furniture points: {len(points)}")
         
         # Downsample if too many points to avoid memory issues
-        if len(points) > 1000000:
-            print(f"Downsampling from {len(points)} points to reduce memory usage...")
-            indices = np.random.choice(len(points), 1000000, replace=False)
-            points = points[indices]
-            print(f"Downsampled to {len(points)} points")
+        # if len(points) > 1000000:
+        #     print(f"Downsampling from {len(points)} points to reduce memory usage...")
+        #     indices = np.random.choice(len(points), 1000000, replace=False)
+        #     points = points[indices]
+        #     print(f"Downsampled to {len(points)} points")
 
         # Determine appropriate eps based on point density if adaptive eps is enabled
         eps = self._get_adaptive_eps(points) if self.config.use_adaptive_eps else self.config.dbscan_eps
@@ -119,4 +119,184 @@ class FurnitureClusterer:
             left_down_corner=min_coords,
             right_up_corner=max_coords,
             center=center
+        )
+
+    def cluster_labeled_points(self, points: np.ndarray, point_labels: List[str]) -> List[FurnitureCluster]:
+        """
+        Cluster points that have already been labeled.
+        """
+        print(f"Clustering {len(points)} labeled points...")
+        
+        if len(points) == 0:
+            return []
+
+        # Determine appropriate eps
+        eps = self._get_adaptive_eps(points) if self.config.use_adaptive_eps else self.config.dbscan_eps
+        print(f"DBSCAN eps={eps:.3f}")
+        
+        clustering = DBSCAN(eps=eps, min_samples=self.config.dbscan_min_samples).fit(points)
+        labels = clustering.labels_
+        
+        unique_cluster_ids = set(labels)
+        unique_cluster_ids.discard(-1)
+        
+        clusters = []
+        
+        for cluster_id in unique_cluster_ids:
+            mask = (labels == cluster_id)
+            cluster_points = points[mask]
+            cluster_point_labels = np.array(point_labels)[mask]
+            
+            # Filter by size
+            if len(cluster_points) < self.config.min_furniture_points:
+                continue
+                
+            # Determine label
+            # Count labels in this cluster
+            unique, counts = np.unique(cluster_point_labels, return_counts=True)
+            label_counts = dict(zip(unique, counts))
+            
+            # Remove 'unknown' from voting if present
+            if 'unknown' in label_counts:
+                del label_counts['unknown']
+            
+            if not label_counts:
+                continue
+                
+            best_label = max(label_counts.items(), key=lambda x: x[1])[0]
+            
+            # Create cluster
+            bbox = self._compute_bbox(cluster_points)
+            
+            # Check height
+            height = bbox.right_up_corner[1] - bbox.left_down_corner[1]
+            if height > self.config.max_furniture_height:
+                continue
+                
+            # Create votes dict for the cluster
+            votes = defaultdict(int)
+            for l, c in label_counts.items():
+                votes[l] = int(c)
+            
+            clusters.append(
+                FurnitureCluster(
+                    points=cluster_points,
+                    cluster_id=cluster_id,
+                    bbox_3d=bbox,
+                    num_points=len(cluster_points),
+                    label=best_label,
+                    label_votes=votes
+                )
+            )
+            
+        print(f"Created {len(clusters)} clusters from labeled points")
+        
+        # Merge overlapping clusters with same label
+        clusters = self.merge_overlapping_clusters(clusters)
+        
+        return clusters
+
+    def merge_overlapping_clusters(self, clusters: List[FurnitureCluster]) -> List[FurnitureCluster]:
+        """Merge overlapping clusters with compatible labels"""
+        print(f"Merging overlapping clusters (initial: {len(clusters)})")
+        
+        merged = True
+        while merged:
+            merged = False
+            new_clusters = []
+            skip_indices = set()
+            
+            # Sort by number of points (descending) to merge smaller into larger
+            clusters.sort(key=lambda c: c.num_points, reverse=True)
+            
+            for i in range(len(clusters)):
+                if i in skip_indices:
+                    continue
+                
+                current_cluster = clusters[i]
+                
+                for j in range(i + 1, len(clusters)):
+                    if j in skip_indices:
+                        continue
+                    
+                    other_cluster = clusters[j]
+                    
+                    if self._should_merge(current_cluster, other_cluster):
+                        # Merge j into i
+                        current_cluster = self._merge_clusters(current_cluster, other_cluster)
+                        skip_indices.add(j)
+                        merged = True
+                
+                new_clusters.append(current_cluster)
+            
+            clusters = new_clusters
+            if merged:
+                print(f"  Merged down to {len(clusters)} clusters")
+        
+        return clusters
+
+    def _should_merge(self, c1: FurnitureCluster, c2: FurnitureCluster) -> bool:
+        # Check overlap with some padding to be aggressive (0.75m padding)
+        if not self._check_overlap(c1.bbox_3d, c2.bbox_3d, padding=0.75):
+            return False
+            
+        # Check labels
+        l1 = c1.label
+        l2 = c2.label
+        
+        # Always merge same labels
+        if l1 == l2:
+            return True
+            
+        return False
+
+    def _check_overlap(self, bbox1: BBox3d, bbox2: BBox3d, padding: float = 0.0) -> bool:
+        # Check if bboxes intersect with padding
+        # Check X
+        if bbox1.right_up_corner[0] + padding < bbox2.left_down_corner[0] - padding or \
+           bbox2.right_up_corner[0] + padding < bbox1.left_down_corner[0] - padding:
+            return False
+            
+        # Check Y (height)
+        if bbox1.right_up_corner[1] + padding < bbox2.left_down_corner[1] - padding or \
+           bbox2.right_up_corner[1] + padding < bbox1.left_down_corner[1] - padding:
+            return False
+
+        # Check Z
+        if bbox1.right_up_corner[2] + padding < bbox2.left_down_corner[2] - padding or \
+           bbox2.right_up_corner[2] + padding < bbox1.left_down_corner[2] - padding:
+            return False
+            
+        return True
+
+    def _merge_clusters(self, c1: FurnitureCluster, c2: FurnitureCluster) -> FurnitureCluster:
+        # Combine points
+        new_points = np.vstack((c1.points, c2.points))
+        
+        # Combine votes if they exist
+        new_votes = defaultdict(int)
+        if c1.label_votes:
+            for l, c in c1.label_votes.items():
+                new_votes[l] += c
+        if c2.label_votes:
+            for l, c in c2.label_votes.items():
+                new_votes[l] += c
+            
+        # Determine new label (should be same)
+        new_label = c1.label
+        
+        # Recompute bbox
+        min_coords = np.min(new_points, axis=0)
+        max_coords = np.max(new_points, axis=0)
+        center = (min_coords + max_coords) / 2
+        
+        new_bbox = BBox3d(min_coords, max_coords, center)
+        
+        return FurnitureCluster(
+            points=new_points,
+            cluster_id=c1.cluster_id, # Keep ID of larger cluster
+            bbox_3d=new_bbox,
+            num_points=len(new_points),
+            label=new_label,
+            label_votes=new_votes
         )

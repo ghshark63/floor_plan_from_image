@@ -53,6 +53,91 @@ class LabelProjector:
 
         return final_clusters
 
+    def project_labels_to_points(self,
+                                 points: np.ndarray,
+                                 detections: List[List[Dict[str, Any]]],
+                                 cameras: List[Dict[str, Any]]) -> tuple[List[str], List[Dict[str, int]]]:
+        """
+        Project 2D YOLO detections to individual 3D points.
+        Returns:
+            point_labels: List of assigned labels for each point
+            point_votes: List of vote dictionaries for each point
+        """
+        print(f"Projecting 2D labels to {len(points)} 3D points...")
+        
+        num_points = len(points)
+        # Initialize votes for each point
+        point_votes = [defaultdict(float) for _ in range(num_points)]
+        
+        num_views = len(detections)
+        
+        for view_idx in range(num_views):
+            camera_detections = detections[view_idx]
+            camera_info = cameras[view_idx]
+            
+            if not camera_detections:
+                continue
+                
+            print(f"Processing view {view_idx + 1}/{num_views} with {len(camera_detections)} detections")
+            
+            # Project all points to this camera
+            u, v, depth = self._project_points_to_camera(points, camera_info)
+            
+            # Filter valid projections
+            valid_mask = (depth > 0)
+            
+            if not np.any(valid_mask):
+                continue
+                
+            # For each detection, find points inside bbox
+            for detection in camera_detections:
+                bbox_2d = detection['bbox'] # [x1, y1, x2, y2]
+                label = detection['label']
+                confidence = detection['confidence']
+                
+                # Vectorized check for points inside bbox
+                in_bbox_mask = (u >= bbox_2d[0]) & (u <= bbox_2d[2]) & \
+                               (v >= bbox_2d[1]) & (v <= bbox_2d[3]) & \
+                               valid_mask
+                               
+                # Indices of points inside bbox
+                point_indices = np.where(in_bbox_mask)[0]
+                
+                if len(point_indices) == 0:
+                    continue
+                    
+                # Calculate weights
+                # closer points get higher weight
+                depths = depth[point_indices]
+                weights = confidence * np.exp(-depths / self.config.distance_weight_scale)
+                
+                # Update votes
+                for idx, weight in zip(point_indices, weights):
+                    point_votes[idx][label] += weight
+
+        # Assign final labels
+        point_labels = []
+        labeled_count = 0
+        
+        for votes in point_votes:
+            if not votes:
+                point_labels.append('unknown')
+                continue
+                
+            # Find best label
+            best_label = max(votes.items(), key=lambda x: x[1])[0]
+            best_score = votes[best_label]
+            
+            # Use a threshold for acceptance
+            if best_score > self.config.min_vote_score: 
+                point_labels.append(best_label)
+                labeled_count += 1
+            else:
+                point_labels.append('unknown')
+                
+        print(f"Labeled {labeled_count} out of {num_points} points")
+        return point_labels, point_votes
+
     def _merge_overlapping_clusters(self, clusters: List[FurnitureCluster]) -> List[FurnitureCluster]:
         """Merge overlapping clusters with compatible labels"""
         print(f"Merging overlapping clusters (initial: {len(clusters)})")
@@ -254,6 +339,60 @@ class LabelProjector:
             return u, v, point_cam[2]
         else:
             return None, None, -1
+
+    def _project_points_to_camera(self, points: np.ndarray, camera_info: Dict[str, Any]) -> tuple:
+        """
+        Project multiple 3D points to 2D image coordinates.
+        Returns: u, v, depth (arrays of shape (N,))
+        """
+        intrinsics = camera_info.get('intrinsics')
+        rotation = camera_info.get('rotation')
+        translation = camera_info.get('translation')
+        image_width = camera_info.get('image_width', 640)
+        image_height = camera_info.get('image_height', 480)
+
+        if intrinsics is None or rotation is None or translation is None:
+            return np.zeros(len(points)), np.zeros(len(points)), -np.ones(len(points))
+
+        # Transform points to camera coordinates
+        # points: (N, 3)
+        # rotation: (3, 3)
+        # translation: (3,)
+        # point_cam = R @ p + t => points @ R.T + t
+        
+        points_cam = points @ rotation.T + translation
+        
+        # Extract coordinates
+        x = points_cam[:, 0]
+        y = points_cam[:, 1]
+        z = points_cam[:, 2]
+        
+        # Project to image plane
+        # Avoid division by zero
+        z_safe = np.where(z <= 0, 1e-6, z)
+        
+        u_norm = x / z_safe
+        v_norm = y / z_safe
+        
+        fx = intrinsics[0, 0]
+        fy = intrinsics[1, 1]
+        cx = intrinsics[0, 2]
+        cy = intrinsics[1, 2]
+        
+        u = fx * u_norm + cx
+        v = fy * v_norm + cy
+        
+        # Mark invalid points
+        # Behind camera
+        invalid_mask = (z <= 0)
+        # Outside image
+        invalid_mask |= (u < 0) | (u >= image_width) | (v < 0) | (v >= image_height)
+        
+        # Set depth of invalid points to -1
+        depth = z.copy()
+        depth[invalid_mask] = -1
+        
+        return u, v, depth
 
     def _assign_final_labels(self, clusters: List[FurnitureCluster]) -> List[FurnitureCluster]:
         """Assign final labels to clusters based on voting results"""

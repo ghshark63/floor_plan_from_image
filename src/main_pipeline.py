@@ -57,18 +57,36 @@ class FloorPlanGenerator:
         segmentation_results = self.segmenter.segment(processed_pcd)
         furniture_points = segmentation_results.furniture_points
 
-        clusters = self.furniture_clusterer.cluster_furniture_points(furniture_points)
-
-        labeled_clusters = self.label_projector.project_labels_to_clusters(
-            clusters, detections, cameras
+        # New pipeline: Label points first, then cluster
+        furniture_points_np = np.asarray(furniture_points.points)
+        
+        point_labels, _ = self.label_projector.project_labels_to_points(
+            furniture_points_np, detections, cameras
         )
+        
+        # Filter out unknown points
+        valid_indices = [i for i, label in enumerate(point_labels) if label != 'unknown']
+        
+        if not valid_indices:
+            print("No furniture points labeled. Skipping clustering.")
+            labeled_clusters = []
+        else:
+            cleaned_points = furniture_points_np[valid_indices]
+            cleaned_labels = [point_labels[i] for i in valid_indices]
+            
+            print(f"Kept {len(cleaned_points)} points after filtering unknown labels")
+            
+            labeled_clusters = self.furniture_clusterer.cluster_labeled_points(
+                cleaned_points, cleaned_labels
+            )
 
         self.floor_plan_visualizer.generate_floor_plan(
             labeled_clusters,
             mesh_path=self.config.floor_plan.mesh_path,
             texture_path=self.config.floor_plan.texture_path,
             output_path=output_path,
-            alignment_matrix=alignment_rotation
+            alignment_matrix=alignment_rotation,
+            wall_planes=segmentation_results.wall_planes
         )
 
     def _align_reconstruction(self, point_cloud: o3d.geometry.PointCloud, 

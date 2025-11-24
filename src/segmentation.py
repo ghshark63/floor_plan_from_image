@@ -21,7 +21,7 @@ class SegmentationResult:
     
     # Plane models
     floor_plane: Optional[np.ndarray] = None
-    wall_normals: Optional[List[np.ndarray]] = None
+    wall_planes: Optional[List[np.ndarray]] = None
 
 class StructuralSegmenter:
     def __init__(self, config: SegmentationConfig):
@@ -40,7 +40,7 @@ class StructuralSegmenter:
         ceil_indices = self.detect_ceil(point_cloud, floor_indices)
 
         print("Detecting walls")
-        wall_indices, wall_normals = self.detect_walls(point_cloud, floor_indices, ceil_indices)
+        wall_indices, wall_planes = self.detect_walls(point_cloud, floor_indices, ceil_indices)
 
         # Remaining points are potential furniture
         all_indices = set(range(len(points)))
@@ -60,7 +60,7 @@ class StructuralSegmenter:
             ceil_indices=ceil_indices,
             furniture_indices=furniture_indices,
             floor_plane=floor_plane,
-            wall_normals=wall_normals
+            wall_planes=wall_planes
         )
 
     def detect_floor(self, point_cloud: PointCloud) -> Tuple[List[int], Optional[np.ndarray]]:
@@ -203,7 +203,7 @@ class StructuralSegmenter:
 
         tmp_pcd: PointCloud = pcd.select_by_index(available_global_indices)
         wall_global_indices = []
-        wall_normals = []
+        wall_planes = []
         min_wall_points = int(len(tmp_pcd.points) * self.config.min_wall_points_ratio)
 
         for wall_num in range(self.config.max_walls):
@@ -227,7 +227,7 @@ class StructuralSegmenter:
             if horizontal_component < self.config.wall_vertical_threshold:
                 global_inliers = [available_global_indices[i] for i in local_inliers]
                 wall_global_indices.extend(global_inliers)
-                wall_normals.append(normal)
+                wall_planes.append(plane_model)
                 print(f"Wall {wall_num + 1}: {len(global_inliers)} points")
 
             remaining_local_indices = list(set(range(len(tmp_pcd.points))) - set(local_inliers))
@@ -235,4 +235,4 @@ class StructuralSegmenter:
             tmp_pcd = tmp_pcd.select_by_index(remaining_local_indices)
             available_global_indices = [available_global_indices[i] for i in remaining_local_indices]
 
-        return wall_global_indices, wall_normals
+        return wall_global_indices, wall_planes

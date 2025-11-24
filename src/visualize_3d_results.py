@@ -95,21 +95,37 @@ def visualize_3d_results():
     segmentation_results = generator.segmenter.segment(processed_pcd)
     furniture_points = segmentation_results.furniture_points
     
-    # Clustering
-    print("Clustering furniture points...")
-    clusters = generator.furniture_clusterer.cluster_furniture_points(furniture_points)
-    
-    # Labeling
-    print("Projecting labels...")
-    labeled_clusters = generator.label_projector.project_labels_to_clusters(
-        clusters, detections, cameras
+    # New Pipeline: Label Points -> Filter -> Cluster
+    print("Projecting labels to points...")
+    furniture_points_np = np.asarray(furniture_points.points)
+    point_labels, _ = generator.label_projector.project_labels_to_points(
+        furniture_points_np, detections, cameras
     )
+    
+    # Filter out unknown points
+    print("Filtering unknown points...")
+    valid_indices = [i for i, label in enumerate(point_labels) if label != 'unknown']
+    
+    if not valid_indices:
+        print("No furniture points labeled. Skipping clustering.")
+        labeled_clusters = []
+    else:
+        cleaned_points = furniture_points_np[valid_indices]
+        cleaned_labels = [point_labels[i] for i in valid_indices]
+        
+        print(f"Kept {len(cleaned_points)} points after filtering unknown labels")
+        
+        # Clustering
+        print("Clustering labeled points...")
+        labeled_clusters = generator.furniture_clusterer.cluster_labeled_points(
+            cleaned_points, cleaned_labels
+        )
     
     # 4. Visualize in 3D
     print("\n--- Starting 3D Visualization ---")
-    visualize_clusters_and_mesh(labeled_clusters, MESH_PATH, alignment_rotation)
+    visualize_clusters_and_mesh(labeled_clusters, MESH_PATH, alignment_rotation, segmentation_results.wall_planes)
 
-def visualize_clusters_and_mesh(clusters, mesh_path, alignment_matrix):
+def visualize_clusters_and_mesh(clusters, mesh_path, alignment_matrix, wall_planes=None):
     geometries = []
     
     # Load Mesh
@@ -122,6 +138,31 @@ def visualize_clusters_and_mesh(clusters, mesh_path, alignment_matrix):
         transform = np.eye(4)
         transform[:3, :3] = alignment_matrix
         mesh.transform(transform)
+        
+        # Remove walls if provided
+        if wall_planes:
+            print(f"Removing {len(wall_planes)} detected walls from 3D mesh...")
+            vertices = np.asarray(mesh.vertices)
+            
+            # Calculate distances to all planes
+            ones = np.ones((len(vertices), 1))
+            hom_vertices = np.hstack((vertices, ones))
+            planes_matrix = np.array(wall_planes).T
+            distances = np.dot(hom_vertices, planes_matrix)
+            
+            wall_threshold = 0.10
+            is_wall_vertex = np.any(np.abs(distances) < wall_threshold, axis=1)
+            
+            # Filter triangles
+            triangles = np.asarray(mesh.triangles)
+            # Check if any vertex of the triangle is a wall vertex
+            triangle_wall_mask = is_wall_vertex[triangles]
+            triangles_to_remove = np.any(triangle_wall_mask, axis=1)
+            
+            mesh.remove_triangles_by_mask(triangles_to_remove)
+            mesh.remove_unreferenced_vertices()
+            print(f"Removed {np.sum(triangles_to_remove)} triangles belonging to walls")
+
         geometries.append(mesh)
     else:
         print(f"Warning: Mesh not found at {mesh_path}")
