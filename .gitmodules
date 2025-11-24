@@ -1,3 +1,6 @@
 [submodule "experiments/mast3r_slam/thirdparty/mast3r-slam"]
 	path = experiments/mast3r_slam/thirdparty/mast3r-slam
 	url = https://github.com/rmurai0610/MASt3R-SLAM.git
+[submodule "src/thirdparty/openmvs"]
+	path = src/thirdparty/openmvs
+	url = https://github.com/cdcseacave/openMVS
