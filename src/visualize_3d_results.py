@@ -17,10 +17,10 @@ from ultralytics import YOLO
 
 def visualize_3d_results():
     # Paths
-    POINT_CLOUD_PATH = "test/point_cloud.ply"
-    SPARSE_PATH = "test/sparse/0"
-    TEXTURE_PATH = "test/textured0.png"
-    MESH_PATH = "test/final.ply"
+    POINT_CLOUD_PATH = "output/point_cloud.ply"
+    SPARSE_PATH = "output/sparse/0"
+    TEXTURE_PATH = "output/textured0.png"
+    MESH_PATH = "output/final.ply"
     
     if not os.path.exists(POINT_CLOUD_PATH):
         print(f"Error: Point cloud not found at {POINT_CLOUD_PATH}")
@@ -51,7 +51,7 @@ def visualize_3d_results():
     # 2. Load Images and Match Cameras
     print("Loading images...")
     camera_dict = {cam['image_name']: cam for cam in cameras}
-    image_files = sorted(glob.glob("test/images/*.jpg") + glob.glob("test/images/*.png"))
+    image_files = sorted(glob.glob("output/images/*.jpg") + glob.glob("output/images/*.png"))
     matched_images = []
     matched_cameras = []
     

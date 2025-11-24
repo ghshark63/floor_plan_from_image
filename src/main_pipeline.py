@@ -300,7 +300,7 @@ def load_cameras_from_colmap(sparse_path: str) -> List[Dict[str, Any]]:
     Load camera parameters from COLMAP sparse reconstruction.
     
     Args:
-        sparse_path: Path to COLMAP sparse directory (e.g., 'test/sparse/0')
+        sparse_path: Path to COLMAP sparse directory (e.g., 'output/sparse/0')
     
     Returns:
         List of camera dictionaries with intrinsics, rotation, translation, width, height
@@ -363,7 +363,7 @@ def run():
     
     images_dir = args.images_dir if args.images_dir else os.path.join(output_dir, "images")
     sparse_dir = args.sparse_dir if args.sparse_dir else os.path.join(output_dir, "sparse")
-    point_cloud_path = args.point_cloud if args.point_cloud else os.path.join(output_dir, "final.ply")
+    point_cloud_path = args.point_cloud if args.point_cloud else os.path.join(output_dir, "point_cloud.ply")
     texture_path = args.texture_path if args.texture_path else os.path.join(output_dir, "textures.png")
     floor_plan_output = args.floor_plan_output if args.floor_plan_output else os.path.join(output_dir, "floor_plan.png")
     
@@ -394,7 +394,7 @@ def run():
         sparse_model_path = os.path.join(sparse_dir, "0")
         
         # If the user wants to use test data, they should provide:
-        # --point_cloud test/point_cloud.ply --sparse_dir test/sparse --texture_path test/textured0.png --images_dir test/images
+        # --point_cloud output/point_cloud.ply --sparse_dir output/sparse --texture_path output/textured0.png --images_dir output/images
     
     print(f"Using Point Cloud: {point_cloud_path}")
     print(f"Using Sparse Model: {sparse_model_path}")
