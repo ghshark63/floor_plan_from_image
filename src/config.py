@@ -55,9 +55,9 @@ class SegmentationConfig:
 
 
 class ClusteringConfig:
-    def __init__(self, dbscan_eps: float = 0.25, dbscan_min_samples: int = 50,
-                 min_furniture_points: int = 150, max_furniture_height: float = 7.0,
-                 use_adaptive_eps: bool = True, eps_dense: float = 0.15,
+    def __init__(self, dbscan_eps: float = 0.15, dbscan_min_samples: int = 100,
+                 min_furniture_points: int = 200, max_furniture_height: float = 7.0,
+                 use_adaptive_eps: bool = True, eps_dense: float = 0.2,
                  eps_medium: float = 0.25, eps_sparse: float = 0.35):
         self.dbscan_eps = dbscan_eps
         self.dbscan_min_samples = dbscan_min_samples
@@ -71,7 +71,7 @@ class ClusteringConfig:
 
 class LabelingConfig:
     def __init__(self, n_sample_points: int = 20, min_projection_distance: float = 0.1,
-                 min_vote_count: int = 2, min_vote_score: float = 1.5,
+                 min_vote_count: int = 3, min_vote_score: float = 3.1,
                  distance_weight_scale: float = 5.0, bbox_size_penalty: float = 0.5):
         self.n_sample_points = n_sample_points
         self.min_projection_distance = min_projection_distance

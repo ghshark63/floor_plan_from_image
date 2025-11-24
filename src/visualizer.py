@@ -16,7 +16,8 @@ class FloorPlanVisualizer:
                             mesh_path: str,
                             texture_path: str = None, 
                             output_path: str = "floor_plan.png",
-                            alignment_matrix: Optional[np.ndarray] = None) -> None:
+                            alignment_matrix: Optional[np.ndarray] = None,
+                            wall_planes: Optional[List[np.ndarray]] = None) -> None:
         """
         Generate 2D top-down view with labeled furniture bounding boxes and room background
         """
@@ -27,7 +28,7 @@ class FloorPlanVisualizer:
         # 1. Render and draw background mesh
         mesh_extent = None
         if os.path.exists(mesh_path):
-            bg_img, mesh_extent = self._render_top_down_view(mesh_path, texture_path, alignment_matrix)
+            bg_img, mesh_extent = self._render_top_down_view(mesh_path, texture_path, alignment_matrix, wall_planes)
             if bg_img is not None:
                 # origin='lower' places (0,0) at bottom-left
                 ax.imshow(bg_img, extent=mesh_extent, origin='lower', alpha=1.0)
@@ -69,7 +70,9 @@ class FloorPlanVisualizer:
         print(f"Floor plan saved to {output_path}")
         plt.show()
 
-    def _render_top_down_view(self, mesh_path: str, texture_path: str = None, alignment_matrix: Optional[np.ndarray] = None) -> Tuple[Optional[np.ndarray], List[float]]:
+    def _render_top_down_view(self, mesh_path: str, texture_path: str = None, 
+                              alignment_matrix: Optional[np.ndarray] = None,
+                              wall_planes: Optional[List[np.ndarray]] = None) -> Tuple[Optional[np.ndarray], List[float]]:
         import trimesh
         import numpy as np
         import open3d as o3d
@@ -100,6 +103,48 @@ class FloorPlanVisualizer:
                 
                 if self.config.debug:
                     print(f"Vertex 0 after: {tm_mesh.vertices[0]}")
+
+            # Remove walls if provided
+            if wall_planes:
+                print(f"Removing {len(wall_planes)} detected walls from mesh...")
+                vertices = tm_mesh.vertices
+                
+                # A point (x,y,z) is on plane (a,b,c,d) if ax+by+cz+d = 0
+                # Distance is |ax+by+cz+d| / sqrt(a^2+b^2+c^2)
+                # Since plane models from Open3D are usually normalized (a^2+b^2+c^2=1), distance is just |ax+by+cz+d|
+                
+                # We want to remove faces that have vertices close to any wall plane
+                # Let's be aggressive: if any vertex of a face is close to a wall, remove the face
+                
+                # Calculate distances to all planes
+                # planes: (N_planes, 4)
+                # vertices: (N_verts, 3)
+                # We need to append 1 to vertices for dot product
+                
+                ones = np.ones((len(vertices), 1))
+                hom_vertices = np.hstack((vertices, ones)) # (N_verts, 4)
+                
+                planes_matrix = np.array(wall_planes).T # (4, N_planes)
+                
+                # Distances (signed)
+                distances = np.dot(hom_vertices, planes_matrix) # (N_verts, N_planes)
+                
+                # Check if close to any wall (e.g. within 10cm)
+                wall_threshold = 0.10 
+                is_wall_vertex = np.any(np.abs(distances) < wall_threshold, axis=1)
+                
+                # Filter faces
+                # Keep faces where NO vertex is a wall vertex
+                # faces: (N_faces, 3) indices
+                
+                face_wall_mask = is_wall_vertex[tm_mesh.faces] # (N_faces, 3) boolean
+                # If any vertex is a wall, remove face
+                faces_to_remove = np.any(face_wall_mask, axis=1)
+                
+                print(f"Removing {np.sum(faces_to_remove)} faces belonging to walls")
+                
+                tm_mesh.update_faces(~faces_to_remove)
+                tm_mesh.remove_unreferenced_vertices()
 
             # 2. CROP (Geometry first)
             # We calculate the crop based on aligned vertices
