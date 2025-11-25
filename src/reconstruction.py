@@ -89,12 +89,19 @@ class ReconstructionPipeline:
         # 3. OpenMVS Pipeline
         print("Step 3: Running OpenMVS pipeline...")
         
-        # Define binary paths (assuming Windows .exe)
-        interface_colmap = self.mvs_bin_dir / "InterfaceCOLMAP.exe"
-        densify_point_cloud = self.mvs_bin_dir / "DensifyPointCloud.exe"
-        reconstruct_mesh = self.mvs_bin_dir / "ReconstructMesh.exe"
-        refine_mesh = self.mvs_bin_dir / "RefineMesh.exe"
-        texture_mesh = self.mvs_bin_dir / "TextureMesh.exe"
+        # Define binary paths
+        if os.name == 'nt':
+            interface_colmap = self.mvs_bin_dir / "InterfaceCOLMAP.exe"
+            densify_point_cloud = self.mvs_bin_dir / "DensifyPointCloud.exe"
+            reconstruct_mesh = self.mvs_bin_dir / "ReconstructMesh.exe"
+            refine_mesh = self.mvs_bin_dir / "RefineMesh.exe"
+            texture_mesh = self.mvs_bin_dir / "TextureMesh.exe"
+        else:
+            interface_colmap = self.mvs_bin_dir / "InterfaceCOLMAP"
+            densify_point_cloud = self.mvs_bin_dir / "DensifyPointCloud"
+            reconstruct_mesh = self.mvs_bin_dir / "ReconstructMesh"
+            refine_mesh = self.mvs_bin_dir / "RefineMesh"
+            texture_mesh = self.mvs_bin_dir / "TextureMesh"
         
         # Helper to run command
         def run_cmd(cmd_list):

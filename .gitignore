@@ -213,5 +213,9 @@ __marimo__/
 /input
 /output
 
-/data/coco_furniture
+data/
 mlflow/
+
+# YOLO training runs
+experiments/yolo_training/runs/
+notebooks/runs/

@@ -1,0 +1,13 @@
+data/
+models/
+experiments/
+output/
+.git/
+__pycache__/
+*.pyc
+.DS_Store
+venv/
+.env
+.pytest_cache/
+test/
+notebooks/
