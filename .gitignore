@@ -212,3 +212,6 @@ __marimo__/
 /test
 /input
 /output
+
+/data/coco_furniture
+mlflow/
